@@ -22,11 +22,11 @@ type Page struct {
 }
 type Directory struct {
 	Title string
-	Body  []string
+	Paths []string
 }
 type Drive struct {
 	Title string
-	Body  []string
+	Names []string
 }
 
 func main() {
@@ -49,7 +49,7 @@ func main() {
 var (
 	templates = template.Must(template.ParseFiles("edit.html", "view.html", "directories.html", "drives.html"))
 
-	validPath = regexp.MustCompile("^/(edit|save|view|directories|drives)/([a-zA-Z0-9]+)$")
+	validPath = regexp.MustCompile("^/(edit|save|view|directories|drives)\\/")
 )
 
 func setupWebServer(c chan int, port string) {
@@ -84,7 +84,7 @@ func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.Handl
 
 			return
 		}
-		fn(w, r, m[2])
+		fn(w, r, "File System")
 	}
 
 }
@@ -109,21 +109,26 @@ func getDirectories(writer http.ResponseWriter, request *http.Request, title str
 
 	var idx int = 0
 	for e := fsItems.Front(); e != nil; e = e.Next() {
-
-		directories[idx] = fmt.Sprintf("%s", e.Value)
-
+		directories[idx] = fmt.Sprintf("%s", e.Value) + "\n"
 		idx++
-
 	}
 
-	renderDirectoryTemplate(writer, "directories", &Directory{Title: "View FileSystem Directories", Body: directories})
+	renderDirectoryTemplate(writer, "directories", &Directory{Title: "File System Directories", Paths: directories})
 }
 
 func getDrives(writer http.ResponseWriter, request *http.Request, title string) {
 
 	var drvs = getDrivesImpl()
 
-	renderDriveTemplate(writer, "drives", &Drive{Title: "View FileSystem Drives", Body: drvs})
+	drives := make([]string, len(drvs), len(drvs)+1)
+
+	var idx = 0
+	for drv := range drvs {
+		drives[idx] = string(drv)
+		idx++
+	}
+
+	renderDriveTemplate(writer, "drives", &Drive{Title: "File System Directories", Names: drives})
 }
 
 /*Handlers*/
@@ -244,7 +249,7 @@ func getDirectoriesImpl(dirs []string, maxDirs int, depth int) *list.List {
 
 		for _, fsItem := range fsItems {
 
-			fqn := string(dir) + fsItem.Name()
+			fqn := string(dir) + "\\" + fsItem.Name()
 
 			if numDirsMax > maxDirs {
 
