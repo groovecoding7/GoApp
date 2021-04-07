@@ -240,8 +240,11 @@ func getDirectoriesImpl(dirs []string, maxDirs int, depth int) *list.List {
 	for _, dir := range dirs {
 
 		fsItems, err := ioutil.ReadDir(string(dir))
+
 		if err != nil {
+
 			log.Fatal(err)
+
 		}
 
 		for _, fsItem := range fsItems {
@@ -254,13 +257,11 @@ func getDirectoriesImpl(dirs []string, maxDirs int, depth int) *list.List {
 
 			} else if fsItem.IsDir() && depth > 1 {
 
-				var l = readDirectory(fqn, depth)
+				var directoryList = readDirectory(fqn, depth)
 
-				for e := l.Front(); e != nil; e = e.Next() {
+				for directory := range directoryList {
 
-					fdn := fmt.Sprintf("%s", e.Value)
-
-					fileList.PushBack(fdn)
+					fileList.PushBack(directory)
 
 				}
 
@@ -275,7 +276,7 @@ func getDirectoriesImpl(dirs []string, maxDirs int, depth int) *list.List {
 	return fileList
 }
 
-func readDirectory(d string, depth int) *list.List {
+func readDirectory(d string, depth int) []string {
 
 	var files []string
 
@@ -302,15 +303,7 @@ func readDirectory(d string, depth int) *list.List {
 
 	}
 
-	fileList := list.New()
-
-	for _, file := range files {
-
-		fileList.PushBack(file)
-
-	}
-
-	return fileList
+	return files
 }
 
 /*Template Handling Methods*/
