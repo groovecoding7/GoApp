@@ -39,8 +39,8 @@ func main() {
 }
 
 var (
+	templates = template.Must(template.ParseFiles("edit.html", "view.html"))
 
-	templates  = template.Must(template.ParseFiles("edit.html", "view.html"))
 	validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
 )
 
@@ -50,7 +50,7 @@ func setupWebServer(c chan int, port string) {
 	http.HandleFunc("/edit/", editHandler)
 	http.HandleFunc("/save/", saveHandler)
 
-	http.HandleFunc("/execCommand/", execCmdHandler)
+	http.HandleFunc("/execCommand/", execHandler)
 	http.HandleFunc("/getDrives/", getDrives)
 	http.HandleFunc("/getDirectories/", getDirectories)
 
@@ -64,21 +64,7 @@ func setupWebServer(c chan int, port string) {
 	c <- 200
 }
 
-func getTitle(w http.ResponseWriter, r *http.Request) (string, error) {
-
-	m := validPath.FindStringSubmatch(r.URL.Path)
-
-	if m == nil {
-
-		http.NotFound(w, r)
-
-		return "", errors.New("invalid Page Title")
-
-	}
-
-	return m[2], nil // The title is the second subexpression.
-
-}
+/*Directory Retrieval Methods*/
 
 func getDirectories(writer http.ResponseWriter, request *http.Request) {
 
@@ -92,52 +78,39 @@ func getDirectories(writer http.ResponseWriter, request *http.Request) {
 
 	}
 
-	var fsItems = getDirectoryInfo(dirs, 1000, 1)
+	var fsItems = getDirectoriesImpl(dirs, 1000, 1)
 
-	title := "/view/"
+	directories := make([]string, fsItems.Len(), fsItems.Len()+1)
 
-	p, err := loadPage(title)
+	var idx int = 0
+	for e := fsItems.Front(); e != nil; e = e.Next() {
 
-	if err != nil {
+		directories[idx] = fmt.Sprintf("<a href=\"http://localhost:8080/view/$s>\"", e.Value)
 
-		fmt.Fprintln(writer, err)
+		idx++
 
-	} else {
-
-		t, err := template.ParseFiles("view.html")
-
-		if err!=nil {
-
-			fmt.Fprintln(writer, err)
-
-		} else {
-
-			for e := fsItems.Front(); e != nil; e = e.Next() {
-
-				err = t.Execute(writer, p)
-
-				if err!=nil{
-
-					fmt.Fprintln(writer, err)
-
-				}
-			}
-		}
 	}
+
+	renderTemplate(writer, "view", &Page{Title: "View FileSystem", Body: []byte(strings.Join(directories, "\n"))})
 }
 
 func getDrives(writer http.ResponseWriter, request *http.Request) {
 
 	if request.URL.Path == "/getDrives/" {
 
-		var drvs = getOSDrives()
+		var drvs = getDrivesImpl()
+
 		for _, drv := range drvs {
+
 			fmt.Fprintln(writer, drv)
+
 		}
 	}
 }
 
-func execCmdHandler(writer http.ResponseWriter, request *http.Request) {
+/*Handlers*/
+
+func execHandler(writer http.ResponseWriter, request *http.Request) {
 
 	cmds, ok := request.URL.Query()["cmd"]
 	if !ok || len(cmds) < 1 {
@@ -149,7 +122,7 @@ func execCmdHandler(writer http.ResponseWriter, request *http.Request) {
 	var err error
 	for cmd := range cmds {
 		err, stdOut, stdError = executeShellCommand(string(cmd))
-		if err!=nil {
+		if err != nil {
 			fmt.Fprintln(writer, fmt.Sprintf("Execute Command Failed with Error: %s : %s.\n", stdError, err), nil)
 		}
 		fmt.Fprintln(writer, fmt.Sprintf("Executed Command Successfully: %s.\n", stdOut), nil)
@@ -157,71 +130,96 @@ func execCmdHandler(writer http.ResponseWriter, request *http.Request) {
 
 }
 
-func viewHandler(w http.ResponseWriter, r *http.Request) {
+func viewHandler(writer http.ResponseWriter, r *http.Request) {
 
-	title := r.URL.Path[len("/view/"):]
+	title, err := getTitle(writer, r)
 
-	p, _ := loadPage(title)
-
-	t, _ := template.ParseFiles("view.html")
-
-	t.Execute(w, p)
-
-}
-
-func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
-
-	err := templates.ExecuteTemplate(w, tmpl+".html", p)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-
-}
-
-func editHandler(w http.ResponseWriter, r *http.Request){
-
-}
-
-func saveHandler(w http.ResponseWriter, r *http.Request){
-
-	title := r.URL.Path[len("/save/"):]
-
-	body := r.FormValue("body")
-
-	p := &Page{Title: title, Body: []byte(body)}
-
-	err := p.save()
+	p, err := loadPage(title)
 
 	if err != nil {
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Redirect(writer, r, "/edit/"+title, http.StatusFound)
 
 		return
 
 	}
 
-	http.Redirect(w, r, "/view/"+title, http.StatusFound)
-}
-
-func enableCors(w *http.ResponseWriter) {
-
-	(*w).Header().Set("Access-Control-Allow-Origin", "*")
+	renderTemplate(writer, "view", p)
 
 }
 
-func initialize(w http.ResponseWriter, r *http.Request) (bool) {
+func editHandler(writer http.ResponseWriter, r *http.Request) {
 
-	enableCors(&w)
+	title, err := getTitle(writer, r)
+
+	if err != nil {
+
+		return
+
+	}
+
+	p, err := loadPage(title)
+
+	if err != nil {
+
+		p = &Page{Title: title}
+
+	}
+
+	renderTemplate(writer, "edit", p)
+
+}
+
+func saveHandler(writer http.ResponseWriter, r *http.Request) {
+
+	title, err := getTitle(writer, r)
+
+	if err != nil {
+
+		return
+
+	}
+
+	body := r.FormValue("body")
+
+	p := &Page{Title: title, Body: []byte(body)}
+
+	err = p.save()
+
+	if err != nil {
+
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+
+		return
+	}
+
+	http.Redirect(writer, r, "/view/"+title, http.StatusFound)
+}
+
+/*Directory Methods Implementation*/
+
+func enableCors(writer *http.ResponseWriter) {
+
+	(*writer).Header().Set("Access-Control-Allow-Origin", "*")
+
+}
+
+func initialize(writer http.ResponseWriter, r *http.Request) bool {
+
+	enableCors(&writer)
 
 	if r.Method != "GET" {
-		http.Error(w, "Method is not supported.", http.StatusNotFound)
+		http.Error(writer, "Method is not supported.", http.StatusNotFound)
 		return false
 	}
 
 	return true
 }
 
-func getOSDrives() (r []string) {
+func getDrivesImpl() (r []string) {
 
 	for _, drive := range "ABCDEFGHIJKLMNOPQRSTUVWXYZ" {
 		f, err := os.Open(string(drive) + ":\\")
@@ -234,7 +232,7 @@ func getOSDrives() (r []string) {
 	return
 }
 
-func getDirectoryInfo(dirs []string, maxDirs int, depth int) *list.List {
+func getDirectoriesImpl(dirs []string, maxDirs int, depth int) *list.List {
 
 	fileList := list.New()
 	var numDirsMax = 0
@@ -256,7 +254,7 @@ func getDirectoryInfo(dirs []string, maxDirs int, depth int) *list.List {
 
 			} else if fsItem.IsDir() && depth > 1 {
 
-				var l = ReadDirectory(fqn, depth)
+				var l = readDirectory(fqn, depth)
 
 				for e := l.Front(); e != nil; e = e.Next() {
 
@@ -277,7 +275,7 @@ func getDirectoryInfo(dirs []string, maxDirs int, depth int) *list.List {
 	return fileList
 }
 
-func ReadDirectory(d string, depth int) *list.List {
+func readDirectory(d string, depth int) *list.List {
 
 	var files []string
 
@@ -315,9 +313,38 @@ func ReadDirectory(d string, depth int) *list.List {
 	return fileList
 }
 
+/*Template Handling Methods*/
+
+func getTitle(writer http.ResponseWriter, r *http.Request) (string, error) {
+
+	m := validPath.FindStringSubmatch(r.URL.Path)
+
+	if m == nil {
+
+		http.NotFound(writer, r)
+
+		return "", errors.New("invalid Page Title")
+
+	}
+
+	return m[2], nil // The title is the second subexpression.
+}
+
+func renderTemplate(writer http.ResponseWriter, tmpl string, p *Page) {
+
+	err := templates.ExecuteTemplate(writer, tmpl+".html", p)
+
+	if err != nil {
+
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+
+	}
+
+}
+
 func loadPage(title string) (*Page, error) {
 
-	filename := title + ".html"
+	filename := title + ".txt"
 
 	body, err := ioutil.ReadFile(filename)
 
@@ -331,9 +358,14 @@ func loadPage(title string) (*Page, error) {
 }
 
 func (p *Page) save() error {
+
 	filename := p.Title + ".txt"
+
 	return ioutil.WriteFile(filename, p.Body, 0600)
+
 }
+
+/* Shell Command Handler*/
 
 const ShellToUse = "bash"
 
