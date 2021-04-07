@@ -20,6 +20,14 @@ type Page struct {
 	Title string
 	Body  []byte
 }
+type Directory struct {
+	Title string
+	Body  []string
+}
+type Drive struct {
+	Title string
+	Body  []string
+}
 
 func main() {
 
@@ -39,23 +47,23 @@ func main() {
 }
 
 var (
-	templates = template.Must(template.ParseFiles("edit.html", "view.html"))
+	templates = template.Must(template.ParseFiles("edit.html", "view.html", "directories.html", "drives.html"))
 
-	validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
+	validPath = regexp.MustCompile("^/(edit|save|view|directories|drives)/([a-zA-Z0-9]+)$")
 )
 
 func setupWebServer(c chan int, port string) {
 
-	http.HandleFunc("/view/", viewHandler)
-	http.HandleFunc("/edit/", editHandler)
-	http.HandleFunc("/save/", saveHandler)
+	http.HandleFunc("/view/", makeHandler(viewHandler))
+	http.HandleFunc("/edit/", makeHandler(editHandler))
+	http.HandleFunc("/save/", makeHandler(saveHandler))
 
-	http.HandleFunc("/execCommand/", execHandler)
-	http.HandleFunc("/getDrives/", getDrives)
-	http.HandleFunc("/getDirectories/", getDirectories)
+	http.HandleFunc("/execCommand/", makeHandler(execHandler))
+	http.HandleFunc("/drives/", makeHandler(getDrives))
+	http.HandleFunc("/directories/", makeHandler(getDirectories))
 
 	log.Printf("Listening on port %s", port)
-	log.Printf("Open http://localhost:%s in the browser", port)
+	log.Printf("Open 'http://localhost:%s/drives/all' in the browser", port)
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%s", port), nil); err != nil {
 		log.Fatal(err)
@@ -64,9 +72,26 @@ func setupWebServer(c chan int, port string) {
 	c <- 200
 }
 
+func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		m := validPath.FindStringSubmatch(r.URL.Path)
+
+		if m == nil {
+
+			http.NotFound(w, r)
+
+			return
+		}
+		fn(w, r, m[2])
+	}
+
+}
+
 /*Directory Retrieval Methods*/
 
-func getDirectories(writer http.ResponseWriter, request *http.Request) {
+func getDirectories(writer http.ResponseWriter, request *http.Request, title string) {
 
 	dirs, ok := request.URL.Query()["dir"]
 
@@ -85,32 +110,25 @@ func getDirectories(writer http.ResponseWriter, request *http.Request) {
 	var idx int = 0
 	for e := fsItems.Front(); e != nil; e = e.Next() {
 
-		directories[idx] = fmt.Sprintf("<a href=\"http://localhost:8080/view/$s>\"", e.Value)
+		directories[idx] = fmt.Sprintf("%s", e.Value)
 
 		idx++
 
 	}
 
-	renderTemplate(writer, "view", &Page{Title: "View FileSystem", Body: []byte(strings.Join(directories, "\n"))})
+	renderDirectoryTemplate(writer, "directories", &Directory{Title: "View FileSystem Directories", Body: directories})
 }
 
-func getDrives(writer http.ResponseWriter, request *http.Request) {
+func getDrives(writer http.ResponseWriter, request *http.Request, title string) {
 
-	if request.URL.Path == "/getDrives/" {
+	var drvs = getDrivesImpl()
 
-		var drvs = getDrivesImpl()
-
-		for _, drv := range drvs {
-
-			fmt.Fprintln(writer, drv)
-
-		}
-	}
+	renderDriveTemplate(writer, "drives", &Drive{Title: "View FileSystem Drives", Body: drvs})
 }
 
 /*Handlers*/
 
-func execHandler(writer http.ResponseWriter, request *http.Request) {
+func execHandler(writer http.ResponseWriter, request *http.Request, title string) {
 
 	cmds, ok := request.URL.Query()["cmd"]
 	if !ok || len(cmds) < 1 {
@@ -130,13 +148,8 @@ func execHandler(writer http.ResponseWriter, request *http.Request) {
 
 }
 
-func viewHandler(writer http.ResponseWriter, r *http.Request) {
+func viewHandler(writer http.ResponseWriter, r *http.Request, title string) {
 
-	title, err := getTitle(writer, r)
-
-	if err != nil {
-		return
-	}
 	p, err := loadPage(title)
 
 	if err != nil {
@@ -146,20 +159,10 @@ func viewHandler(writer http.ResponseWriter, r *http.Request) {
 		return
 
 	}
-
-	renderTemplate(writer, "view", p)
-
+	renderPageTemplate(writer, "view", p)
 }
 
-func editHandler(writer http.ResponseWriter, r *http.Request) {
-
-	title, err := getTitle(writer, r)
-
-	if err != nil {
-
-		return
-
-	}
+func editHandler(writer http.ResponseWriter, r *http.Request, title string) {
 
 	p, err := loadPage(title)
 
@@ -169,25 +172,17 @@ func editHandler(writer http.ResponseWriter, r *http.Request) {
 
 	}
 
-	renderTemplate(writer, "edit", p)
+	renderPageTemplate(writer, "edit", p)
 
 }
 
-func saveHandler(writer http.ResponseWriter, r *http.Request) {
-
-	title, err := getTitle(writer, r)
-
-	if err != nil {
-
-		return
-
-	}
+func saveHandler(writer http.ResponseWriter, r *http.Request, title string) {
 
 	body := r.FormValue("body")
 
 	p := &Page{Title: title, Body: []byte(body)}
 
-	err = p.save()
+	var err = p.save()
 
 	if err != nil {
 
@@ -323,9 +318,33 @@ func getTitle(writer http.ResponseWriter, r *http.Request) (string, error) {
 	return m[2], nil // The title is the second subexpression.
 }
 
-func renderTemplate(writer http.ResponseWriter, tmpl string, p *Page) {
+func renderPageTemplate(writer http.ResponseWriter, tmpl string, p *Page) {
 
 	err := templates.ExecuteTemplate(writer, tmpl+".html", p)
+
+	if err != nil {
+
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+
+	}
+
+}
+
+func renderDirectoryTemplate(writer http.ResponseWriter, tmpl string, d *Directory) {
+
+	err := templates.ExecuteTemplate(writer, tmpl+".html", d)
+
+	if err != nil {
+
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+
+	}
+
+}
+
+func renderDriveTemplate(writer http.ResponseWriter, tmpl string, d *Drive) {
+
+	err := templates.ExecuteTemplate(writer, tmpl+".html", d)
 
 	if err != nil {
 
