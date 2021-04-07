@@ -109,7 +109,7 @@ func getDirectories(writer http.ResponseWriter, request *http.Request, title str
 
 	var idx int = 0
 	for e := fsItems.Front(); e != nil; e = e.Next() {
-		directories[idx] = fmt.Sprintf("%s", e.Value) + "\n"
+		directories[idx] = fmt.Sprintf("%s", e.Value)
 		idx++
 	}
 
@@ -120,15 +120,7 @@ func getDrives(writer http.ResponseWriter, request *http.Request, title string) 
 
 	var drvs = getDrivesImpl()
 
-	drives := make([]string, len(drvs), len(drvs)+1)
-
-	var idx = 0
-	for drv := range drvs {
-		drives[idx] = string(drv)
-		idx++
-	}
-
-	renderDriveTemplate(writer, "drives", &Drive{Title: "File System Directories", Names: drives})
+	renderDriveTemplate(writer, "drives", &Drive{Title: "File System Directories", Names: drvs})
 }
 
 /*Handlers*/
