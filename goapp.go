@@ -81,15 +81,19 @@ func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.Handl
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		m := validPath.FindStringSubmatch(r.URL.Path)
+		if initialize(w, r) == true {
 
-		if m == nil {
+			m := validPath.FindStringSubmatch(r.URL.Path)
 
-			http.NotFound(w, r)
+			if m == nil {
 
-			return
+				http.NotFound(w, r)
+
+				return
+			}
+			fn(w, r, "File System")
 		}
-		fn(w, r, "File System")
+
 	}
 
 }
