@@ -28,6 +28,12 @@ type Drive struct {
 	Title string
 	Names []string
 }
+type ExecuteCommand struct {
+	Title  string
+	err    error
+	stdOut string
+	stdErr string
+}
 
 func main() {
 
@@ -47,9 +53,9 @@ func main() {
 }
 
 var (
-	templates = template.Must(template.ParseFiles("edit.html", "view.html", "directories.html", "drives.html"))
+	templates = template.Must(template.ParseFiles("edit.html", "view.html", "directories.html", "drives.html", "execmd.html"))
 
-	validPath = regexp.MustCompile("^/(edit|save|view|directories|drives)\\/")
+	validPath = regexp.MustCompile("^/(edit|save|view|directories|drives|execmd)\\/")
 )
 
 func setupWebServer(c chan int, port string) {
@@ -58,7 +64,7 @@ func setupWebServer(c chan int, port string) {
 	http.HandleFunc("/edit/", makeHandler(editHandler))
 	http.HandleFunc("/save/", makeHandler(saveHandler))
 
-	http.HandleFunc("/execCommand/", makeHandler(execHandler))
+	http.HandleFunc("/execmd/", makeHandler(execHandler))
 	http.HandleFunc("/drives/", makeHandler(getDrives))
 	http.HandleFunc("/directories/", makeHandler(getDirectories))
 
@@ -135,14 +141,14 @@ func execHandler(writer http.ResponseWriter, request *http.Request, title string
 	var stdError string
 	var stdOut string
 	var err error
-	for cmd := range cmds {
-		err, stdOut, stdError = executeShellCommand(string(cmd))
+	for _, c := range cmds {
+		err, stdOut, stdError = executeCommand(string(c), "")
 		if err != nil {
 			fmt.Fprintln(writer, fmt.Sprintf("Execute Command Failed with Error: %s : %s.\n", stdError, err), nil)
 		}
 		fmt.Fprintln(writer, fmt.Sprintf("Executed Command Successfully: %s.\n", stdOut), nil)
 	}
-
+	renderExecmdTemplate(writer, "execmd", &ExecuteCommand{Title: "Execute Command", err: err, stdOut: stdOut, stdErr: stdError})
 }
 
 func viewHandler(writer http.ResponseWriter, r *http.Request, title string) {
@@ -351,6 +357,18 @@ func renderDriveTemplate(writer http.ResponseWriter, tmpl string, d *Drive) {
 
 }
 
+func renderExecmdTemplate(writer http.ResponseWriter, tmpl string, d *ExecuteCommand) {
+
+	err := templates.ExecuteTemplate(writer, tmpl+".html", d)
+
+	if err != nil {
+
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+
+	}
+
+}
+
 func loadPage(title string) (*Page, error) {
 
 	filename := title + ".txt"
@@ -378,11 +396,11 @@ func (p *Page) save() error {
 
 const ShellToUse = "bash"
 
-func executeShellCommand(command string) (error, string, string) {
+func executeCommand(command string, args string) (error, string, string) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := exec.Command(ShellToUse, "-c", command)
+	cmd := exec.Command(ShellToUse, args, command)
 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
