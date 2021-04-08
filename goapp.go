@@ -30,9 +30,8 @@ type Drive struct {
 }
 type ExecuteCommand struct {
 	Title  string
-	err    error
-	stdOut string
-	stdErr string
+	StdOut string
+	StdErr string
 }
 
 func main() {
@@ -148,7 +147,7 @@ func execHandler(writer http.ResponseWriter, request *http.Request, title string
 		}
 		fmt.Fprintln(writer, fmt.Sprintf("Executed Command Successfully: %s.\n", stdOut), nil)
 	}
-	renderExecmdTemplate(writer, "execmd", &ExecuteCommand{Title: "Execute Command", err: err, stdOut: stdOut, stdErr: stdError})
+	renderExecmdTemplate(writer, "execmd", &ExecuteCommand{Title: "Execute Command", StdOut: stdOut, StdErr: stdError})
 }
 
 func viewHandler(writer http.ResponseWriter, r *http.Request, title string) {
@@ -210,8 +209,11 @@ func initialize(writer http.ResponseWriter, r *http.Request) bool {
 	enableCors(&writer)
 
 	if r.Method != "GET" {
+
 		http.Error(writer, "Method is not supported.", http.StatusNotFound)
+
 		return false
+
 	}
 
 	return true
@@ -220,10 +222,15 @@ func initialize(writer http.ResponseWriter, r *http.Request) bool {
 func getDrivesImpl() (r []string) {
 
 	for _, drive := range "ABCDEFGHIJKLMNOPQRSTUVWXYZ" {
+
 		f, err := os.Open(string(drive) + ":\\")
+
 		if err == nil {
+
 			r = append(r, string(drive))
+
 			f.Close()
+
 		}
 
 	}
@@ -400,12 +407,13 @@ func executeCommand(command string, args string) (error, string, string) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := exec.Command(ShellToUse, args, command)
+	cmd := exec.Command("cmd", "/C", "start", command)
+	var err = cmd.Start()
 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	//err := cmd.Run()
 
 	return err, stdout.String(), stderr.String()
 }
