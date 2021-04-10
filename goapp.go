@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -141,17 +142,21 @@ func execHandler(writer http.ResponseWriter, request *http.Request, title string
 		fmt.Fprintln(writer, fmt.Sprintf("Execute Command Failed with Error: %s.\n", "url Param 'cmd' is missing"), nil)
 	}
 
+	executedCommands := make([]ExecuteCommand, len(cmds), len(cmds)+1)
 	var stdError string
 	var stdOut string
 	var err error
+	var cmdIdx int = 0
 	for _, c := range cmds {
 		err, stdOut, stdError = executeCommand(string(c), "")
 		if err != nil {
-			fmt.Fprintln(writer, fmt.Sprintf("Execute Command Failed with Error: %s : %s.\n", stdError, err), nil)
+			//fmt.Fprintln(writer, fmt.Sprintf("Execute Command Failed with Error: %s : %s.\n", stdError, err), nil)
 		}
-		fmt.Fprintln(writer, fmt.Sprintf("Executed Command Successfully: %s.\n", stdOut), nil)
+		executedCommands[cmdIdx] = ExecuteCommand{Title: "Executed Command = " + c, StdOut: stdOut, StdErr: stdError}
+		cmdIdx++
+		//fmt.Fprintln(writer, fmt.Sprintf("Executed Command Successfully: %s.\n", stdOut), nil)
 	}
-	renderExecmdTemplate(writer, "execmd", &ExecuteCommand{Title: "Execute Command", StdOut: stdOut, StdErr: stdError})
+	renderExecmdTemplate(writer, "execmd", executedCommands)
 }
 
 func viewHandler(writer http.ResponseWriter, r *http.Request, title string) {
@@ -368,9 +373,9 @@ func renderDriveTemplate(writer http.ResponseWriter, tmpl string, d *Drive) {
 
 }
 
-func renderExecmdTemplate(writer http.ResponseWriter, tmpl string, d *ExecuteCommand) {
+func renderExecmdTemplate(writer http.ResponseWriter, tmpl string, executedCommands []ExecuteCommand) {
 
-	err := templates.ExecuteTemplate(writer, tmpl+".html", d)
+	err := templates.ExecuteTemplate(writer, tmpl+".html", executedCommands)
 
 	if err != nil {
 
@@ -405,19 +410,49 @@ func (p *Page) save() error {
 
 /* Shell Command Handler*/
 
-const ShellToUse = "bash"
-
 func executeCommand(command string, args string) (error, string, string) {
 
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd := exec.Command("cmd", "/C", "start", command)
-	var err = cmd.Start()
+	var shellName string = ""
+	var os string = getOS()
 
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	if os == "Windows" {
+		shellName = "cmd"
+	} else if os == "Linux" {
+		shellName = "bash"
+	}
 
-	//err := cmd.Run()
+	if shellName != "" {
 
-	return err, stdout.String(), stderr.String()
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+
+		cmd := exec.Command(shellName, "/C", "start", command)
+
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		var err = cmd.Start()
+
+		return err, stdout.String(), stderr.String()
+
+	}
+	return nil, "", ""
+}
+
+func getOS() string {
+
+	var osName string = ""
+	os := runtime.GOOS
+
+	switch os {
+	case "windows":
+		osName = "Windows"
+	case "darwin":
+		osName = "MAC operating system"
+	case "linux":
+		osName = "Linux"
+	default:
+		osName = os
+	}
+	return osName
 }

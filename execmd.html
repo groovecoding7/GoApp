@@ -1,5 +1,16 @@
-<h1>{{.Title}}</h1>
+<div>
+    
+    {{range .}}
 
-<p>{{.StdOut}}</p>
+        <h1>{{.Title}}</h1>
 
-<p>{{.StdErr}}</p>
+        <p>{{.StdOut}}</p>
+        
+        <p>{{.StdErr}}</p>
+
+    {{end}}
+
+</div>
+
+
+
